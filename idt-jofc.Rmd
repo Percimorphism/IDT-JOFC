@@ -1,0 +1,591 @@
+---
+title: "Idt-Jofc-On-Selected-Features (Part 1 of IDT-JOFC Demo)"
+output: html_document
+author: Percy Gongkai Li
+---
+
+The following is a proof of concept on how will IDT-JOFC work:
+
+
+We try to use the "IDT meets JOFC" algorithm to get an improved multiscale unsupervised structure learning. The general idea is that we want to embed data from different modes into a common space R^d, in which we try to keep the within distance between elements in the same dataset while also try to align datapoints from the same object in different views (JOFC). After doing this, we use IDT for clustering. The ideal situation will be that the same element (object) in different dataset (view) will have the same label.
+
+The test dataset we are going to use is the dataset in Vogelstein et. al's 2014 science paper
+
+```{r, warning=FALSE, message=FALSE}
+source("fastsmacof.R")
+source("idt-function.R") #my version of idt function, with plot added
+print(load("Znorm-single-37780x632-f8.Rbin"))
+```
+______________________________________________________________________________________________________________________________________
+
+First, we pick 2 features from the Znorm table, and try to embed them into the R^d using JOFC. The JOFC code is provided by Vince.
+As a try-out we pick relative few objects (n=100) and pick the embedding small (d=20) per Youngser's suggestion. We will try on larger dataset and dimension later on. The weight w is of crucial importance here. We pick w = 0.1, 0.9 and 99 in JOFC code for each pair of features.
+
+Note: We can find those features in Fig. 2 of the science paper.
+Note: For two features, I calculated ARI just to see how well the clustering works.
+
+We pick feature 1 and 2, w=0.1
+```{r, warning=FALSE, message=FALSE}
+D1=Znorm[,1:79]
+D2=Znorm[,80:158]
+
+samp=sample(1:37780, 100, replace=FALSE)
+
+D1=D1[samp,]
+D2=D2[samp,]
+
+#we compute the dissimilarity matrix
+Delta1=as.matrix(dist(D1, method = "euclidean", diag = TRUE, upper = TRUE, p = 2))
+Delta2=as.matrix(dist(D2, method = "euclidean", diag = TRUE, upper = TRUE, p = 2))
+
+Delta1=Delta1/norm(Delta1, "F")
+Delta2=Delta2/norm(Delta2, "F")
+
+Delta=list(Delta1, Delta2)
+
+embedding=fast.smacof(0.1, Delta, ndim=20)
+
+#we save the resulting file for future reference
+save(embedding, file="embeddingF=1,2W=0.1N=100D=20.Rbin")
+
+```
+
+We then invoke IDT on the resulting embedding after some clean up. We pick the depth of the tree to be 3 and the minnum number of elements to be 10. (This is my own version of IDT.)
+```{r, warning=FALSE}
+#we get embedding, which is a list of matrices, each is the configuration of the 100 points
+print(load("embeddingF=1,2W=0.1N=100D=20.Rbin"))
+
+embedconflist=embedding$conf
+#print(embedconflist)
+
+#it returns a list of matrices (4 in the iris dataset)
+#stack the final configs on top of each other
+embedconf=data.frame()
+for (i in embedconflist){
+  embedconf=rbind(embedconf, i)
+}
+
+rownames(embedconf) = NULL
+embedconf=as.matrix(embedconf)
+
+#PLEASE CENTER THE DATA FIRST! This is important!
+embedconf=scale(embedconf, center = TRUE)
+attr(embedconf,"scaled:center")<-NULL 
+attr(embedconf,"scaled:scale")<-NULL 
+
+
+embedconf=as.data.frame(embedconf)
+print("the dim of the embedding conf is")
+print(dim(embedconf))
+
+embedconf.pca=prcomp(embedconf, retx=TRUE, center=TRUE)
+
+#dim=getElbows(embedconf.pca$sdev)[3]
+#print("dim we selected in scree plot is:")
+#print(dim)
+
+idtdata=embedconf.pca$x #[,1:dim]
+
+resultlabel=doIdt(idtdata, maxdepth=3, minnum=10)
+plottree(idtdata, maxdepth=3, minnum=10 )
+
+print("the label of the 1st feature")
+print(resultlabel[1:100])
+print("the label of the 2nd feature")
+print(resultlabel[101:200])
+
+print("ARI:")
+adjustedRandIndex(resultlabel[1:100], resultlabel[101:200])
+
+```
+
+Now we try the same features, but with different weights.
+
+Feature=1, 2  w=0.9
+```{r, warning=FALSE, message=FALSE,echo=FALSE}
+embedding=fast.smacof(0.9, Delta, ndim=20)
+
+#we save the resulting file for future reference
+save(embedding, file="embeddingF=1,2W=0.9N=100D=20.Rbin")
+#we get embedding, which is a list of matrices, each is the configuration of the 100 points
+print(load("embeddingF=1,2W=0.9N=100D=20.Rbin"))
+
+embedconflist=embedding$conf
+#print(embedconflist)
+
+#it returns a list of matrices (4 in the iris dataset)
+#stack the final configs on top of each other
+embedconf=data.frame()
+for (i in embedconflist){
+  embedconf=rbind(embedconf, i)
+}
+
+rownames(embedconf) = NULL
+embedconf=as.matrix(embedconf)
+
+#PLEASE CENTER THE DATA FIRST! This is important!
+embedconf=scale(embedconf, center = TRUE)
+attr(embedconf,"scaled:center")<-NULL 
+attr(embedconf,"scaled:scale")<-NULL 
+
+
+embedconf=as.data.frame(embedconf)
+print("the dim of the embedding conf is")
+print(dim(embedconf))
+
+
+embedconf.pca=prcomp(embedconf, retx=TRUE, center=TRUE)
+
+#dim=getElbows(embedconf.pca$sdev)[3]
+#print("dim we selected in scree plot is:")
+#print(dim)
+
+idtdata=embedconf.pca$x #[,1:dim]
+
+resultlabel=doIdt(idtdata, maxdepth=3, minnum=10)
+plottree(idtdata, maxdepth=3, minnum=10 )
+
+print("the label of the 1st feature")
+print(resultlabel[1:100])
+print("the label of the 2nd feature")
+print(resultlabel[101:200])
+
+print("ARI:")
+adjustedRandIndex(resultlabel[1:100], resultlabel[101:200])
+```
+
+
+Feature=1,2  w=99
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+embedding=fast.smacof(99, Delta, ndim=20)
+
+#we save the resulting file for future reference
+save(embedding, file="embeddingF=1,2W=99N=100D=20.Rbin")
+#we get embedding, which is a list of matrices, each is the configuration of the 100 points
+print(load("embeddingF=1,2W=99N=100D=20.Rbin"))
+
+embedconflist=embedding$conf
+#print(embedconflist)
+
+#it returns a list of matrices (4 in the iris dataset)
+#stack the final configs on top of each other
+embedconf=data.frame()
+for (i in embedconflist){
+  embedconf=rbind(embedconf, i)
+}
+
+rownames(embedconf) = NULL
+embedconf=as.matrix(embedconf)
+
+#PLEASE CENTER THE DATA FIRST! This is important!
+embedconf=scale(embedconf, center = TRUE)
+attr(embedconf,"scaled:center")<-NULL 
+attr(embedconf,"scaled:scale")<-NULL 
+
+
+embedconf=as.data.frame(embedconf)
+print("the dim of the embedding conf is")
+print(dim(embedconf))
+
+
+embedconf.pca=prcomp(embedconf, retx=TRUE, center=TRUE)
+
+#dim=getElbows(embedconf.pca$sdev)[3]
+#print("")
+#print("dim we selected in scree plot is:")
+#print(dim)
+
+idtdata=embedconf.pca$x #[,1:dim]
+
+resultlabel=doIdt(idtdata, maxdepth=3, minnum=10)
+plottree(idtdata, maxdepth=3, minnum=10 )
+
+print("the label of the 1st feature")
+print(resultlabel[1:100])
+print("the label of the 2nd feature")
+print(resultlabel[101:200])
+
+print("ARI:")
+adjustedRandIndex(resultlabel[1:100], resultlabel[101:200])
+
+```
+
+________________________________________________________________________________________________________________________________________
+
+
+We now pick some other pairs of features and ran on them to see if there are anything interesting.
+Feature=2,3  w=0.1
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+D1=Znorm[,80:158]
+D2=Znorm[,159:237]
+
+samp=sample(1:37780, 100, replace=FALSE)
+
+D1=D1[samp,]
+D2=D2[samp,]
+
+#we compute the dissimilarity matrix
+Delta1=as.matrix(dist(D1, method = "euclidean", diag = TRUE, upper = TRUE, p = 2))
+Delta2=as.matrix(dist(D2, method = "euclidean", diag = TRUE, upper = TRUE, p = 2))
+
+Delta1=Delta1/norm(Delta1, "F")
+Delta2=Delta2/norm(Delta2, "F")
+
+Delta=list(Delta1, Delta2)
+
+
+embedding=fast.smacof(0.1, Delta, ndim=20)
+
+#we save the resulting file for future reference
+save(embedding, file="embeddingF=2,3W=0.1N=100D=20.Rbin")
+#we get embedding, which is a list of matrices, each is the configuration of the 100 points
+print(load("embeddingF=2,3W=0.1N=100D=20.Rbin"))
+
+embedconflist=embedding$conf
+#print(embedconflist)
+
+#it returns a list of matrices (4 in the iris dataset)
+#stack the final configs on top of each other
+embedconf=data.frame()
+for (i in embedconflist){
+  embedconf=rbind(embedconf, i)
+}
+
+rownames(embedconf) = NULL
+embedconf=as.matrix(embedconf)
+
+#PLEASE CENTER THE DATA FIRST! This is important!
+embedconf=scale(embedconf, center = TRUE)
+attr(embedconf,"scaled:center")<-NULL 
+attr(embedconf,"scaled:scale")<-NULL 
+
+
+embedconf=as.data.frame(embedconf)
+print("the dim of the embedding conf is")
+print(dim(embedconf))
+
+
+embedconf.pca=prcomp(embedconf, retx=TRUE, center=TRUE)
+
+#dim=getElbows(embedconf.pca$sdev)[3]
+#print("")
+#print("dim we selected in scree plot is:")
+#print(dim)
+
+idtdata=embedconf.pca$x #[,1:dim]
+
+resultlabel=doIdt(idtdata, maxdepth=3, minnum=10)
+plottree(idtdata, maxdepth=3, minnum=10 )
+
+print("the label of the 2nd feature")
+print(resultlabel[1:100])
+print("the label of the 3rd feature")
+print(resultlabel[101:200])
+
+print("ARI:")
+adjustedRandIndex(resultlabel[1:100], resultlabel[101:200])
+
+```
+
+
+Feature=2,3  w=0.9
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+embedding=fast.smacof(0.9, Delta, ndim=20)
+
+#we save the resulting file for future reference
+save(embedding, file="embeddingF=2,3W=0.9N=100D=20.Rbin")
+#we get embedding, which is a list of matrices, each is the configuration of the 100 points
+print(load("embeddingF=2,3W=0.9N=100D=20.Rbin"))
+
+embedconflist=embedding$conf
+#print(embedconflist)
+
+#it returns a list of matrices (4 in the iris dataset)
+#stack the final configs on top of each other
+embedconf=data.frame()
+for (i in embedconflist){
+  embedconf=rbind(embedconf, i)
+}
+
+rownames(embedconf) = NULL
+embedconf=as.matrix(embedconf)
+
+#PLEASE CENTER THE DATA FIRST! This is important!
+embedconf=scale(embedconf, center = TRUE)
+attr(embedconf,"scaled:center")<-NULL 
+attr(embedconf,"scaled:scale")<-NULL 
+
+
+embedconf=as.data.frame(embedconf)
+print("the dim of the embedding conf is")
+print(dim(embedconf))
+
+
+embedconf.pca=prcomp(embedconf, retx=TRUE, center=TRUE)
+
+#dim=getElbows(embedconf.pca$sdev)[3]
+#print("")
+#print("dim we selected in scree plot is:")
+#print(dim)
+
+idtdata=embedconf.pca$x #[,1:dim]
+
+resultlabel=doIdt(idtdata, maxdepth=3, minnum=10)
+plottree(idtdata, maxdepth=3, minnum=10 )
+
+print("the label of the 2nd feature")
+print(resultlabel[1:100])
+print("the label of the 3rd feature")
+print(resultlabel[101:200])
+
+print("ARI:")
+adjustedRandIndex(resultlabel[1:100], resultlabel[101:200])
+```
+
+
+Feature=2,3  w=99
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+embedding=fast.smacof(99, Delta, ndim=20)
+
+#we save the resulting file for future reference
+save(embedding, file="embeddingF=2,3W=99N=100D=20.Rbin")
+#we get embedding, which is a list of matrices, each is the configuration of the 100 points
+print(load("embeddingF=2,3W=99N=100D=20.Rbin"))
+
+embedconflist=embedding$conf
+#print(embedconflist)
+
+#it returns a list of matrices (4 in the iris dataset)
+#stack the final configs on top of each other
+embedconf=data.frame()
+for (i in embedconflist){
+  embedconf=rbind(embedconf, i)
+}
+
+rownames(embedconf) = NULL
+embedconf=as.matrix(embedconf)
+
+#PLEASE CENTER THE DATA FIRST! This is important!
+embedconf=scale(embedconf, center = TRUE)
+attr(embedconf,"scaled:center")<-NULL 
+attr(embedconf,"scaled:scale")<-NULL 
+
+
+embedconf=as.data.frame(embedconf)
+print("the dim of the embedding conf is")
+print(dim(embedconf))
+
+
+embedconf.pca=prcomp(embedconf, retx=TRUE, center=TRUE)
+
+#dim=getElbows(embedconf.pca$sdev)[3]
+#print("")
+#print("dim we selected in scree plot is:")
+#print(dim)
+
+idtdata=embedconf.pca$x #[,1:dim]
+
+resultlabel=doIdt(idtdata, maxdepth=3, minnum=10)
+plottree(idtdata, maxdepth=3, minnum=10 )
+
+print("the label of the 2nd feature")
+print(resultlabel[1:100])
+print("the label of the 3rd feature")
+print(resultlabel[101:200])
+
+print("ARI:")
+adjustedRandIndex(resultlabel[1:100], resultlabel[101:200])
+```
+
+
+________________________________________________________________________________________________________________________________________
+
+We now try to combind first 3 features together and see what happens:
+Feature=1,2,3  w=0.1
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+D1=Znorm[,1:79]
+D2=Znorm[,80:158]
+D3=Znorm[,159:237]
+
+samp=sample(1:37780, 100, replace=FALSE)
+
+D1=D1[samp,]
+D2=D2[samp,]
+D3=D3[samp,]
+
+#we compute the dissimilarity matrix
+Delta1=as.matrix(dist(D1, method = "euclidean", diag = TRUE, upper = TRUE, p = 2))
+Delta2=as.matrix(dist(D2, method = "euclidean", diag = TRUE, upper = TRUE, p = 2))
+Delta3=as.matrix(dist(D3, method = "euclidean", diag = TRUE, upper = TRUE, p = 2))
+
+Delta1=Delta1/norm(Delta1, "F")
+Delta2=Delta2/norm(Delta2, "F")
+Delta3=Delta3/norm(Delta3, "F")
+
+Delta=list(Delta1, Delta2, Delta3)
+
+embedding=fast.smacof(0.1, Delta, ndim=20)
+
+#we save the resulting file for future reference
+save(embedding, file="embeddingF=1,2,3W=0.1N=100D=20.Rbin")
+#we get embedding, which is a list of matrices, each is the configuration of the 100 points
+print(load("embeddingF=1,2,3W=0.1N=100D=20.Rbin"))
+
+embedconflist=embedding$conf
+#print(embedconflist)
+
+#it returns a list of matrices (4 in the iris dataset)
+#stack the final configs on top of each other
+embedconf=data.frame()
+for (i in embedconflist){
+  embedconf=rbind(embedconf, i)
+}
+
+rownames(embedconf) = NULL
+embedconf=as.matrix(embedconf)
+
+#PLEASE CENTER THE DATA FIRST! This is important!
+embedconf=scale(embedconf, center = TRUE)
+attr(embedconf,"scaled:center")<-NULL 
+attr(embedconf,"scaled:scale")<-NULL 
+
+
+embedconf=as.data.frame(embedconf)
+print("the dim of the embedding conf is")
+print(dim(embedconf))
+
+
+embedconf.pca=prcomp(embedconf, retx=TRUE, center=TRUE)
+
+#dim=getElbows(embedconf.pca$sdev)[3]
+#print("")
+#print("dim we selected in scree plot is:")
+#print(dim)
+
+idtdata=embedconf.pca$x #[,1:dim]
+
+resultlabel=doIdt(idtdata, maxdepth=3, minnum=10)
+plottree(idtdata, maxdepth=3, minnum=10 )
+
+print("the label of the 1st feature")
+print(resultlabel[1:100])
+print("the label of the 2nd feature")
+print(resultlabel[101:200])
+print("the label of the 3rd feature")
+print(resultlabel[201:300])
+```
+
+
+Feature=1,2,3  w=0.9
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+embedding=fast.smacof(0.9, Delta, ndim=20)
+
+#we save the resulting file for future reference
+save(embedding, file="embeddingF=1,2,3W=0.9N=100D=20.Rbin")
+#we get embedding, which is a list of matrices, each is the configuration of the 100 points
+print(load("embeddingF=1,2,3W=0.9N=100D=20.Rbin"))
+
+embedconflist=embedding$conf
+#print(embedconflist)
+
+#it returns a list of matrices (4 in the iris dataset)
+#stack the final configs on top of each other
+embedconf=data.frame()
+for (i in embedconflist){
+  embedconf=rbind(embedconf, i)
+}
+
+rownames(embedconf) = NULL
+embedconf=as.matrix(embedconf)
+
+#PLEASE CENTER THE DATA FIRST! This is important!
+embedconf=scale(embedconf, center = TRUE)
+attr(embedconf,"scaled:center")<-NULL 
+attr(embedconf,"scaled:scale")<-NULL 
+
+
+embedconf=as.data.frame(embedconf)
+print("the dim of the embedding conf is")
+print(dim(embedconf))
+
+
+embedconf.pca=prcomp(embedconf, retx=TRUE, center=TRUE)
+
+#dim=getElbows(embedconf.pca$sdev)[3]
+#print("")
+#print("dim we selected in scree plot is:")
+#print(dim)
+
+idtdata=embedconf.pca$x #[,1:dim]
+
+resultlabel=doIdt(idtdata, maxdepth=3, minnum=10)
+plottree(idtdata, maxdepth=3, minnum=10 )
+
+print("the label of the 1st feature")
+print(resultlabel[1:100])
+print("the label of the 2nd feature")
+print(resultlabel[101:200])
+print("the label of the 3rd feature")
+print(resultlabel[201:300])
+```
+
+
+Feature=1,2,3  w=99
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+embedding=fast.smacof(99, Delta, ndim=20)
+
+#we save the resulting file for future reference
+save(embedding, file="embeddingF=1,2,3W=99N=100D=20.Rbin")
+#we get embedding, which is a list of matrices, each is the configuration of the 100 points
+print(load("embeddingF=1,2,3W=99N=100D=20.Rbin"))
+
+embedconflist=embedding$conf
+#print(embedconflist)
+
+#it returns a list of matrices (4 in the iris dataset)
+#stack the final configs on top of each other
+embedconf=data.frame()
+for (i in embedconflist){
+  embedconf=rbind(embedconf, i)
+}
+
+rownames(embedconf) = NULL
+embedconf=as.matrix(embedconf)
+
+#PLEASE CENTER THE DATA FIRST! This is important!
+embedconf=scale(embedconf, center = TRUE)
+attr(embedconf,"scaled:center")<-NULL 
+attr(embedconf,"scaled:scale")<-NULL 
+
+
+embedconf=as.data.frame(embedconf)
+print("the dim of the embedding conf is")
+print(dim(embedconf))
+
+
+embedconf.pca=prcomp(embedconf, retx=TRUE, center=TRUE)
+
+#dim=getElbows(embedconf.pca$sdev)[3]
+#print("")
+#print("dim we selected in scree plot is:")
+#print(dim)
+
+idtdata=embedconf.pca$x #[,1:dim]
+
+resultlabel=doIdt(idtdata, maxdepth=3, minnum=10)
+plottree(idtdata, maxdepth=3, minnum=10 )
+
+print("the label of the 1st feature")
+print(resultlabel[1:100])
+print("the label of the 2nd feature")
+print(resultlabel[101:200])
+print("the label of the 3rd feature")
+print(resultlabel[201:300])
+```
+
+________________________________________________________________________________________________________________________________________
